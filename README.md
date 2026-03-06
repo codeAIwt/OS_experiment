@@ -1,50 +1,54 @@
-# OS_experiment
-
-# 实验1：进程同步与互斥
+# 操作系统实验一：进程同步与互斥
 
 本项目包含两个经典的进程同步问题的实现：生产者-消费者问题和读者-写者问题。
 
 ## 项目结构
 
 1. `producer_consumer.c`：实现生产者-消费者问题的代码。
-2. `reader_writer.c`：实现读者-写者问题的代码。 
+2. `reader_writer.c`：实现读者-写者问题的代码。
+
+## 编译与运行
+
+### 生产者-消费者问题
+1.	运行结果：
+![生产者-消费者问题运行结果](./pic/生产者消费者.png)
+ 
+2.	函数意义及与理论知识的联系：
+关键函数与系统调用（与含义）
+- CreateThread(...)：在 Windows API 中创建线程。传入线程入口函数和参数。理论上等同于创建一个执行单元并发运行。注意：建议使用 _beginthreadex 而非 CreateThread 当线程会使用 C/C++ 运行时库（printf、new、fstream 等），以避免 CRT 资源初始化/清理问题。
+- 线程入口（目前为 void Thread_Producter(void *p) / void Thread_Consumer(void *p)）：程序把它们强制转换为 LPTHREAD_START_ROUTINE 使用，但标准签名应为 DWORD WINAPI ThreadFunc(LPVOID lpParam)。正确签名可保证与 Windows 线程 API ABI/返回值一致并利于调用 ExitThread 返回状态。
+- CreateSemaphore(NULL, initialCount, maxCount, name)：创建计数信号量。信号量用于跟踪可用资源数量（这里用来表示 buffer 的“空格/已满”）。若定义了 UNICODE，应传入宽字符名（或使用 NULL 作为未命名信号量）——此前的错误就是因为传入了 narrow 字面量。
+- InitializeCriticalSection, EnterCriticalSection, LeaveCriticalSection：实现互斥（临界区保护）。理论上互斥 + 信号量的组合可同时保证“互斥访问缓冲区”和“生产/消费计数约束”。
+- WaitForSingleObject(sem, INFINITE), ReleaseSemaphore(...)：等待/释放信号量的操作，分别对应 P (wait) 和 V (signal) 操作（Dijkstra 术语）。
+- WaitForMultipleObjects(n_thread, h_Thread, TRUE, -1)：等待所有线程退出。若线程是无限循环的，这会永远阻塞。
+- I/O & timing: ifstream 读取配置，Sleep(m_delay) 模拟任务延迟/持续时间，printf/puts/getch 用于控制台输出与用户交互。
+与并发理论的对应关系
+- 典型 Dijkstra 方案（有界缓冲）：
+    - 计数信号量 empty（这里 sem_avail）初始值 = 缓冲区容量（表示可写槽位），生产者在放入前执行 wait(empty)，消费后 signal(empty)。
+    - 计数信号量 full（这里 sem_full）初始值 = 0（表示已占用槽位数），生产后 signal(full)，消费前 wait(full)。
+    - 一个互斥量（mutex / 临界区）保护对缓冲区的互斥访问。
+- 代码实现对应：生产者：Wait(sem_avail) -> EnterCriticalSection -> produce -> ReleaseSemaphore(sem_full) -> LeaveCriticalSection；消费者：相反。这样保证了资源计数与互斥两方面约束（计数保证不会超过边界、互斥保证单次访问的一致性）。
 
 
-# 实验2 调度算法模拟实验
-**一、实验目的**
-加深对进程和作业概念的理解，深入理解进程的组织，理解常用调度机制与算法的实现
-**二、实验内容**
-编写C语言程序，模拟实现单处理器系统中的进程调度算法，实现对多个进程的模拟调度。
+### 读者-写者问题
+1.	运行结果：
+- 读写互斥：
+![读者-写者问题运行结果](./pic/读写互斥.png)
+- 写写互斥：
+![读者-写者问题运行结果](./pic/写写互斥.png)
 
-- 实现先来先服务调度：
-- 实现非抢占的短进程优先调度
+2.	函数意义及与理论知识的联系：
+关键函数与系统调用（与含义）
+- CreateSemaphore(NULL, initialCount, maxCount, name)：创建计数信号量。信号量用于跟踪可用资源数量（这里用来表示 buffer 的“空格/已满”）。若定义了 UNICODE，应传入宽字符名（或使用 NULL 作为未命名信号量）——此前的错误就是因为传入了 narrow 字面量。
+- InitializeCriticalSection, EnterCriticalSection, LeaveCriticalSection：实现互斥（临界区保护）。理论上互斥 + 信号量的组合可同时保证“互斥访问缓冲区”和“生产/消费计数约束”。
+- WaitForSingleObject(sem, INFINITE), ReleaseSemaphore(...)：等待/释放信号量的操作，分别对应 P (wait) 和 V (signal) 操作（Dijkstra 术语）。
 
-# 实验3 银行家算法仿真实现
-**一、实验目的**
-- 学习编程工具和算法使用，掌握死锁的概念和消除方法。
-
-**二、实验内容**
-- 编写一程序能够模拟银行家算法和安全算法來避免死锁。
-- 假设系统资源有ABC三种，可以运行5个进程。
-- 该程序具备的基本功能为：
-- 程序可以输入3种资源的数目，5个进程对3种资源的最大需求量，已分配量和需求量。 能够判断某一吋刻系统是否处于安全状态，如果处于安全状态能够，给出安全序列，当某进程提岀资源申请时，能够判断是否能把资源分配给申请进程。
-- 程序应当具有简单的交互能力，功能完整。
-
-**三、实验代码与原理**
-见`banker_algorithm.c`
-- 银行家算法原理：
-    - 银行家算法是一种预防性的资源分配策略，用于避免操作系统中的死锁。
-    - 它通过模拟银行家在贷款时的谨慎行为来确保系统不会进入不安全状态，从而防止死锁的发生。
-    - 银行家算法的基本思想是：在分配资源之前，先判断系统是否处于安全状态。如果是安全状态，则分配资源；否则，拒绝分配。
-
-# 实验4 页面置换仿真
-
-**一、实验目的**
-1. 加深对虚拟内存管理理论的理解
-2. 学习页面置换的实现机制及页面置换算法的实现
-
-**二、实验内容**
-1. 设计进行页面置换管理的数据结构
-2. 实现FIFO, LRU等页面置换算法，支持固定分配局部置换策略的实现
-3. 程序可以指定进程所分配的页框数量，可以仿真随机产生页面访问序列（rand），页面访问序列的最大页面编号可指定，伪随机数种子可设定（srand()），页面序列长度可设定
-4. 完成特定测试用例和随机序列测试
+- 核心同步机制
+    - `read_count`: 当前读者数量
+    - `sem_mutex`: 保护 read_count 变量的互斥锁
+    - `sem_w`: 控制写操作的互斥信号量
+- 同步规则
+    - 当有读者在读时，其他读者可以并发读
+    - 当有写者在写时，其他任何线程都不能访问资源
+    - 当有读者在读时，写者必须等待
+    - 当有写者在写时，新的读者也必须等待

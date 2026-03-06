@@ -1,0 +1,185 @@
+// ReadWrite.cpp : Defines the entry point for the console application.
+//
+// 读者-写者问题
+#include "stdafx.h"
+
+
+#include "windows.h"
+#include <conio.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+
+#define INTE_PER_SEC 100  //每个单位时间的毫秒数
+#define MAX_THREAD_NUM  64  //最大线程数
+#define READER 'R'
+#define WRITER 'W'
+
+struct ThreadInfo//线程信息结构体
+{
+	int    serial;//线程序号
+	char   entity;//实体类型
+	double delay;//延迟时间
+	double persist;//持续时间
+};
+
+
+int  read_count = 0; //当前读者数量
+
+CRITICAL_SECTION sem_mutex; //保护read_count的互斥锁
+HANDLE sem_w; //写操作互斥信号量
+
+
+void  ReadWrite(void);//读者-写者函数
+void  Thread_Reader(void *p);//读者线程函数
+void  Thread_Writer(void *p);//写者线程函数
+ 
+
+int main(int argc, char* argv[])//主函数
+{
+	ReadWrite();
+    
+
+	return 0;
+}
+
+///////////////////////
+void ReadWrite(void)//读者-写者函数
+{
+	DWORD n_thread = 5;  //线程数
+	DWORD thread_ID ;	 //线程ID
+ 
+	HANDLE		h_Thread[MAX_THREAD_NUM];//线程句柄数组,每个元素对应一个线程
+	ThreadInfo  thread_info[MAX_THREAD_NUM];//线程信息数组,每个元素对应一个线程
+
+	// 直接在代码中定义线程信息
+	// 3个读者进程，2个写者进程
+	thread_info[0].serial = 1;
+	thread_info[0].entity = READER;
+	thread_info[0].delay = 1.0;
+	thread_info[0].persist = 2.0;
+	
+	thread_info[1].serial = 2;
+	thread_info[1].entity = READER;
+	thread_info[1].delay = 1.5;
+	thread_info[1].persist = 1.8;
+	
+	thread_info[2].serial = 3;
+	thread_info[2].entity = READER;
+	thread_info[2].delay = 2.0;
+	thread_info[2].persist = 1.5;
+	
+	thread_info[3].serial = 4;
+	thread_info[3].entity = WRITER;
+	thread_info[3].delay = 3.0;
+	thread_info[3].persist = 3.0;
+	
+	thread_info[4].serial = 5;
+	thread_info[4].entity = WRITER;
+	thread_info[4].delay = 2.5;
+	thread_info[4].persist = 2.5;
+
+	for(int i=0;i<(int)(n_thread);i++)//创建线程
+	{
+		if(thread_info[i].entity == READER)
+		 
+			h_Thread[i] = CreateThread(NULL,0,(LPTHREAD_START_ROUTINE)( Thread_Reader),//创建读者线程
+			&thread_info[i],0,&thread_ID);
+		else if(thread_info[i].entity == WRITER)
+		{
+			h_Thread[i] = CreateThread(NULL,0,(LPTHREAD_START_ROUTINE)( Thread_Writer),//创建写者线程
+			&thread_info[i],0,&thread_ID);
+		}
+		else
+		{
+			puts("Bad File\n");
+			exit(0);
+		}
+	}
+
+    printf("Total threads: %d\n", n_thread);
+
+  	InitializeCriticalSection(&sem_mutex);//初始化互斥锁
+  	sem_w = CreateSemaphore(NULL, 1, 1, "sem_w");//初始化写互斥信号量
+	 
+  	WaitForMultipleObjects(n_thread,h_Thread,TRUE,-1);//等待所有线程结束
+
+	printf("Task is Finished!\n");
+	getch();
+}
+
+
+///////////////////////////////////////////
+/*
+读者线程函数, 读者线程函数的功能是模拟读者进程的行为, 即读者进程在等待写者进程完成写操作后, 才能开始读取文件.
+*/
+ 
+void  Thread_Reader(void *p)//读者线程函数
+{
+
+	DWORD m_delay;			 
+	DWORD m_persist;		 
+	int		m_serial;	 
+
+	//初始化线程参数
+	m_serial = ((ThreadInfo*)(p))->serial;
+	m_delay  = (DWORD)(((ThreadInfo*)(p))->delay*INTE_PER_SEC);
+	m_persist  = (DWORD)(((ThreadInfo*)(p))->persist*INTE_PER_SEC);
+    while (true)
+	{
+ 	   Sleep(m_delay);//读者线程延迟
+ 	   printf("Reader thread %d: Request to read\n", m_serial);
+	   
+ 	   EnterCriticalSection(&sem_mutex); //保护read_count的互斥锁
+	   read_count++;
+	   if (read_count == 1)
+	   {
+		   WaitForSingleObject(sem_w, INFINITE); //如果是第一个读者，请求写互斥信号量
+	   }
+	   LeaveCriticalSection(&sem_mutex);
+	   
+	   // 读文件操作
+	   printf("Reader thread %d: Start reading\n", m_serial);
+	   Sleep(m_persist);
+	   printf("Reader thread %d: Finish reading\n", m_serial);
+	   
+	   EnterCriticalSection(&sem_mutex); //保护read_count的互斥锁
+	   read_count--;
+	   if (read_count == 0)
+	   {
+		   ReleaseSemaphore(sem_w, 1, NULL); //如果是最后一个读者，释放写互斥信号量
+	   }
+	   LeaveCriticalSection(&sem_mutex);
+	}
+	
+}
+
+
+///////////////////////////////////////////
+ 
+void  Thread_Writer(void *p)//写者线程函数
+{
+
+	DWORD	m_delay;		 
+	DWORD	m_persist;		 
+	int		m_serial;		 
+  	//初始化线程参数
+	m_serial = ((ThreadInfo*)(p))->serial;
+	m_delay  = (DWORD)(((ThreadInfo*)(p))->delay*INTE_PER_SEC);
+	m_persist  = (DWORD)(((ThreadInfo*)(p))->persist*INTE_PER_SEC);
+
+    while (true)
+	{
+	  Sleep(m_delay);
+ 	  printf("Writer thread %d: Request to write\n", m_serial);
+	  
+ 	  WaitForSingleObject(sem_w, INFINITE); //请求写互斥信号量
+	  
+	  // 写文件操作
+ 	  printf("Writer thread %d: Start writing\n", m_serial);
+	  Sleep(m_persist);
+	  printf("Writer thread %d: Finish writing\n", m_serial);
+	  
+ 	  ReleaseSemaphore(sem_w, 1, NULL); //释放写互斥信号量
+    }
+}
